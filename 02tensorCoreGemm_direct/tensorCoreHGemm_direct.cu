@@ -122,9 +122,12 @@ void gemm_v02_test(int m, int n, int k,
 int main()
 {
 #if 1
-    int M = 2048;
-    int N = 2048;
-    int K = 2048;
+    //int M = 2048;
+    //int N = 2048;
+    //int K = 2048;
+        int M = 2048;
+    int N = 512;
+    int K = 128;
 #else
     int M = 2*16;
     int N = 2*16;
@@ -143,7 +146,7 @@ int main()
 
     half alpha = half(1.0);
     half beta  = half(0.0);
-
+printf("hello\n");
     A_h = (half*)malloc(lda * M * sizeof(half));// A(KxM) A(lda x M)
     B_h = (half*)malloc(ldb * N * sizeof(half));
     C_h = (half*)malloc(ldc * N * sizeof(half));
@@ -153,8 +156,8 @@ int main()
     init_matrix(A_h, lda, K, M); //A(KxM)
     init_matrix(B_h, ldb, K, N);
     init_matrix(C_h, ldc, M, N);
-    memcpy(D_h_tcu, C_h, M * ldc * sizeof(half));
-    memcpy(D_h_cublas, C_h, M * ldc * sizeof(float));
+    memcpy(D_h_tcu, C_h, ldc * N * sizeof(half));
+    //memcpy(D_h_cublas, C_h, M * ldc * sizeof(float));
 
 #if 0
     printf("A_h =");
