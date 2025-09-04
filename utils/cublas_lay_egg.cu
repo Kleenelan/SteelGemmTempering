@@ -76,7 +76,7 @@ void verify_blas(int M, int N, int K,
 void verify(int M, int N, half* Ca, int lda, float* Cb, int ldb, double rerror)// all col
 {
     long long count = 0;
-
+    #pragma omp parallel for
     for(int i=0; i<M; i++)
     {
         for(int j=0; j<N; j++)
