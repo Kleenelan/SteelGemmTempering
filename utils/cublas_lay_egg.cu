@@ -1,13 +1,13 @@
-
+#include "matrix_init_print.h"
 #include "cublas_lay_egg.h"
 
 void verify_blas(int M, int N, int K,
                  const half* Ah, int lda,
                  const half* Bh, int ldb,
                  half* Ch, int ldc,
-                 const half alpha,
-                 const half beta,
-                 half* Dh)
+                 const half alpha_ori,
+                 const half beta_ori,
+                 float* Dh)
 {
     cublasHandle_t cublasH = NULL;
     cudaStream_t stream = NULL;
@@ -23,25 +23,38 @@ void verify_blas(int M, int N, int K,
     half *d_B = nullptr;
     half *d_C = nullptr;
 
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_A), M*lda * sizeof(half)));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_B), ldb*K * sizeof(half)));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_C), ldc*N * sizeof(half)));
+    float* sA = (float*)malloc(lda*M * sizeof(float));
+    float* sB = (float*)malloc(ldb*N * sizeof(float));
+    float* sC = (float*)malloc(ldc*N * sizeof(float));
 
-    CUDA_CHECK(cudaMemcpyAsync(d_A, Ah, M*lda * sizeof(half), cudaMemcpyHostToDevice, stream));
-    CUDA_CHECK(cudaMemcpyAsync(d_B, Bh, ldb*K * sizeof(half), cudaMemcpyHostToDevice, stream));
-    CUDA_CHECK(cudaMemcpyAsync(d_C, Ch, ldc*N * sizeof(half), cudaMemcpyHostToDevice, stream));
+    cp_half_to_single(sA, Ah, lda*M);
+    cp_half_to_single(sB, Bh, ldb*N);
+    cp_half_to_single(sC, Ch, ldc*N);
 
-    CUBLAS_CHECK(cublasGemmEx(cublasH, transa, transb,
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_A), lda*M * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_B), ldb*N * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_C), ldc*N * sizeof(float)));
+
+    CUDA_CHECK(cudaMemcpyAsync(d_A, sA, lda*M * sizeof(float), cudaMemcpyHostToDevice, stream));
+    CUDA_CHECK(cudaMemcpyAsync(d_B, sB, ldb*N * sizeof(float), cudaMemcpyHostToDevice, stream));
+    CUDA_CHECK(cudaMemcpyAsync(d_C, sC, ldc*N * sizeof(float), cudaMemcpyHostToDevice, stream));
+    //CUDA_CHECK(cudaStreamSynchronize(stream));//LL:: add
+
+    float alpha = float(alpha_ori);
+    float beta  = float(beta_ori);
+
+    CUBLAS_CHECK(cublasSgemmEx(cublasH, transa, transb,
                               M, N, K,
                               &alpha,
-                              d_A, CUDA_R_16F, lda,
-                              d_B, CUDA_R_16F, ldb,
+                              d_A, CUDA_R_32F, lda,
+                              d_B, CUDA_R_32F, ldb,
                               &beta,
-                              d_C, CUDA_R_16F, ldc,
-                              CUBLAS_COMPUTE_16F,
-                              CUBLAS_GEMM_DEFAULT));
+                              d_C, CUDA_R_32F, ldc//,
+                              //CUBLAS_COMPUTE_32F,
+                            //  CUBLAS_GEMM_DEFAULT
+                            ));
 
-    CUDA_CHECK(cudaMemcpyAsync(Dh, d_C, ldc*N * sizeof(half), cudaMemcpyDeviceToHost, stream));
+    CUDA_CHECK(cudaMemcpyAsync(Dh, d_C, ldc*N * sizeof(float), cudaMemcpyDeviceToHost, stream));
     CUDA_CHECK(cudaStreamSynchronize(stream));
 
 #if 0
@@ -60,7 +73,7 @@ void verify_blas(int M, int N, int K,
 
 }
 
-void verify(int M, int N, half* A, int lda, half* B, int ldb, double rerror)
+void verify(int M, int N, half* Ca, int lda, float* Cb, int ldb, double rerror)// all col
 {
     long long count = 0;
 
@@ -68,8 +81,8 @@ void verify(int M, int N, half* A, int lda, half* B, int ldb, double rerror)
     {
         for(int j=0; j<N; j++)
         {
-            half a = A[i + j*lda];
-            half b = B[ i + j*ldb];
+            half a = Ca[i + j*lda];
+            half b = Cb[ i + j*ldb];
 
             if(abs(float(a-b)/float(a)) > rerror)
             {

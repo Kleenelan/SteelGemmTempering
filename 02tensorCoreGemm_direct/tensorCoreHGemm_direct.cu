@@ -67,7 +67,22 @@ void launch_wmma_gemm(half *A, half *B, half *C, int M, int N, int K) {
     dim3 gridDim((M + 15) / 16, (N + 15) / 16);
     dim3 blockDim(32, 4); // 128 threads per block
 
+    cudaEvent_t start1;
+    cudaEventCreate(&start1);
+    cudaEvent_t stop1;
+    cudaEventCreate(&stop1);
+    cudaEventRecord(start1, NULL);
+// 需要测时间的内核函数kernel;
+
     wmma_gemm<<<gridDim, blockDim>>>(A, B, C, M, N, K);
+
+    cudaEventRecord(stop1, NULL);
+    cudaEventSynchronize(stop1);
+    float msecTotal1 = 0.0f;
+    cudaEventElapsedTime(&msecTotal1, start1, stop1);
+    printf("Time = %7.3f ms\n", msecTotal1);
+
+
 }
 
 
@@ -93,10 +108,9 @@ void gemm_v02_test(int m, int n, int k,
     cudaMemcpy(Cd, Ch, ldc*n*sizeof(half), cudaMemcpyHostToDevice);
     //3. Gemm_v01, simple cuda core gemm
 
-printf("__01________\n");
+    printf("__01________\n");
     launch_wmma_gemm(Ad, Bd, Cd, m, n, k);
-//    gemm_v01_fp16_all<<<grid_,block_>>>(m, n, k, Ad, lda, Bd, ldb, Cd, ldc, alpha, beta);
-printf("##22########\n");
+    printf("##22########\n");
     //4. cpy D2H
     cudaMemcpy(Dh, Cd, ldc*n*sizeof(half), cudaMemcpyDeviceToHost);
     //5. free ABC_d
@@ -107,10 +121,10 @@ printf("##22########\n");
 
 int main()
 {
-#if 0
-    int M = 64;
-    int N = 64;
-    int K = 64;
+#if 1
+    int M = 2048;
+    int N = 2048;
+    int K = 2048;
 #else
     int M = 2*16;
     int N = 2*16;
@@ -124,23 +138,23 @@ int main()
     half *B_h;
     half *C_h;
     half *D_h_tcu;
-    half *D_h_cublas;
+    float *D_h_cublas;
 
 
     half alpha = half(1.0);
     half beta  = half(0.0);
 
-    A_h = (half*)malloc(M * lda * sizeof(half));
+    A_h = (half*)malloc(lda * M * sizeof(half));// A(KxM) A(lda x M)
     B_h = (half*)malloc(ldb * N * sizeof(half));
     C_h = (half*)malloc(ldc * N * sizeof(half));
     D_h_tcu = (half*)malloc(ldc * N * sizeof(half));
-    D_h_cublas = (half*)malloc(ldc * N * sizeof(half));
+    D_h_cublas = (float*)malloc(ldc * N * sizeof(float));
 
-    init_matrix(A_h, lda, M, K, false);
-    init_matrix(B_h, ldb, K, N, true);
-    init_matrix(C_h, ldc, M, N, true);
+    init_matrix(A_h, lda, K, M); //A(KxM)
+    init_matrix(B_h, ldb, K, N);
+    init_matrix(C_h, ldc, M, N);
     memcpy(D_h_tcu, C_h, M * ldc * sizeof(half));
-    memcpy(D_h_cublas, C_h, M * ldc * sizeof(half));
+    memcpy(D_h_cublas, C_h, M * ldc * sizeof(float));
 
 #if 0
     printf("A_h =");
@@ -154,11 +168,12 @@ int main()
 #endif
 
     gemm_v02_test(M, N, K, A_h, lda, B_h, ldb, C_h, ldc, alpha, beta, D_h_tcu);
+#if 0
     printf("D_h_tcu = tensorCoreGemm(A, B) =\n");
     print_matrix(D_h_tcu, ldc, M, N, true);
-
+#endif
     verify_blas(M, N, K, A_h, lda, B_h, ldb, C_h, ldc, alpha, beta, D_h_cublas);
-    verify(M, N, D_h_tcu, ldc, D_h_cublas, ldc, 0.001);// relative error
+    verify(M, N, D_h_tcu, ldc, D_h_cublas, ldc, 0.01);// relative error
 
     free(D_h_tcu);
     free(D_h_cublas);

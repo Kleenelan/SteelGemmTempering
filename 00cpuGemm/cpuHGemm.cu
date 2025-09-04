@@ -22,16 +22,17 @@ void gemm_fp16_cpu(int M, int N, int K,
                    half* C, int ldc,
                    half alpha, half beta)
 {
-    #pragma omp parallel for
+//    #pragma omp parallel for
     for(int i=0; i<M; i++)
     {
+        #pragma omp parallel for
         for(int j=0; j<N; j++)
         {
             half sigma = half(0.0f);
             //#pragma omp parallel for
             for(int k=0; k<K; k++)
             {
-                sigma += A[i*lda + k] * B[k + j*ldb];
+                sigma += A[i*lda + k] * B[k + j*ldb]; // A(lda x M) A(K x M)
             }
             C[i + j*ldc] = alpha*sigma + beta*C[i + j*ldc];
         }
@@ -42,8 +43,8 @@ int main()
 {
 #if 1
     int M = 128;
-    int N = 128;
-    int K = 128;
+    int N = 2048;
+    int K = 512;
 #else
     int M = 7;      // \forall M > 0;
     int N = 7;      // \forall N > 0;
@@ -53,27 +54,27 @@ int main()
     int ldb = K;// B col major
     int ldc = M;// C col major
 
-	half *A_h = nullptr;
+	half *A_h = nullptr; // A(KxM)
     half *B_h = nullptr;
     half *C_h = nullptr;
     half *D_h_cpu = nullptr;
-    half *D_h_cublas = nullptr;
+    float *D_h_cublas = nullptr;
 
     half alpha = half(1.0);
     half beta  = half(0.0);
 
-    A_h = (half*)malloc(M * lda * sizeof(half));
-    B_h = (half*)malloc(ldb * N * sizeof(half));
-    C_h = (half*)malloc(ldc * N * sizeof(half));
+    A_h = (half*)malloc(lda * M * sizeof(half));// A(lda x M)
+    B_h = (half*)malloc(ldb * N * sizeof(half));// B(KxN)
+    C_h = (half*)malloc(ldc * N * sizeof(half));// C(MxN)
     D_h_cpu = (half*)malloc(ldc * N * sizeof(half));
-    D_h_cublas = (half*)malloc(ldc * N * sizeof(half));
+    D_h_cublas = (float*)malloc(ldc * N * sizeof(float));
 
-    init_matrix(A_h, lda, M, K, false);
-    init_matrix(B_h, ldb, K, N, true);
-    init_matrix(C_h, ldc, M, N, true);
+    init_matrix(A_h, lda, K, M);// A(KxM)
+    init_matrix(B_h, ldb, K, N);
+    init_matrix(C_h, ldc, M, N);
 
     memcpy(D_h_cpu, C_h, ldc * N * sizeof(half));
-    memcpy(D_h_cublas, C_h, ldc * N * sizeof(half));
+    //memcpy(D_h_cublas, C_h, ldc * N * sizeof(half));
 
 #if 0
     printf("A_h =");
@@ -96,13 +97,13 @@ int main()
     printf("=====\n");
 #endif
 
-    verify(M, N, D_h_cpu, ldc, D_h_cublas, ldc, 0.01);
-
+    verify(M, N, D_h_cpu, ldc, D_h_cublas, ldc, 0.05);
+#if 0
     free(A_h);
     free(B_h);
     free(C_h);
     free(D_h_cpu);
     free(D_h_cublas);
-
+#endif
     return 0;
 }

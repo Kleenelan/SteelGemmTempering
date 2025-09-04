@@ -13,7 +13,7 @@ LD_FLAG   := -L/usr/local/cuda/lib64 -lcublas
 ARCH_FLAG := --gpu-architecture=sm_120
 
 $(EXE): $(SRC)
-	nvcc $(ARCH_FLAG) $^ -o $@ -Xcompiler -fopenmp -lgomp $(LD_FLAG) $(INC)
+	nvcc -g $(ARCH_FLAG) $^ -o $@ -Xcompiler -fopenmp -lgomp $(LD_FLAG) $(INC)
 
 .PHONY: clean
 clean:

@@ -38,9 +38,9 @@ __global__ void gemm_v01_fp16_all(int M, int N, int K,
 }
 
 void gemm_v01_cuda(int m, int n, int k,
-                   half* Ah, int lda,
-                   half* Bh, int ldb,
-                   half* Ch, int ldc,
+                   half* Ah, int lda,   // (K x lda)
+                   half* Bh, int ldb,   // (ldb x N)
+                   half* Ch, int ldc,   // (ldc x N)
                    half alpha, half beta,
                    half* Dh)
 {
@@ -48,12 +48,12 @@ void gemm_v01_cuda(int m, int n, int k,
     half * Ad = nullptr;
     half * Bd = nullptr;
     half * Cd = nullptr;
-    cudaMalloc((void**)&Ad, m*lda*sizeof(half));
+    cudaMalloc((void**)&Ad, lda*m*sizeof(half));
     cudaMalloc((void**)&Bd, ldb*n*sizeof(half));
     cudaMalloc((void**)&Cd, ldc*n*sizeof(half));
 
     //2. cpy H2D
-    cudaMemcpy(Ad, Ah, m*lda*sizeof(half), cudaMemcpyHostToDevice);
+    cudaMemcpy(Ad, Ah, lda*m*sizeof(half), cudaMemcpyHostToDevice);
     cudaMemcpy(Bd, Bh, ldb*n*sizeof(half), cudaMemcpyHostToDevice);
     cudaMemcpy(Cd, Ch, ldc*n*sizeof(half), cudaMemcpyHostToDevice);
     //3. Gemm_v01, simple cuda core gemm
@@ -82,35 +82,35 @@ int main()
     int N = 64;
     int K = 64;
 #else
-    int M = 2*16;
-    int N = 2*16;
-    int K = 7*16;
+    int M = 128;
+    int N = 2048;
+    int K = 512;
 #endif
-    int lda = K;// A raw major
-    int ldb = K;// B col major
-    int ldc = M;// C col major
+    int lda = K;// A raw major (lda x M) lda >= K
+    int ldb = K;// B col major (ldb x N) ldb >= K
+    int ldc = M;// C col major (ldc x N) ldc >= M
 
 	half *A_h;
     half *B_h;
     half *C_h;
     half *D_h_cuda;
-    half *D_h_cublas;
+    float *D_h_cublas;
 
-    half alpha = half(1.0);
-    half beta  = half(0.0);
+    half alpha = half(1.0f);
+    half beta  = half(0.0f);
 
-    A_h = (half*)malloc(M * lda * sizeof(half));
+    A_h = (half*)malloc(lda * M * sizeof(half));
     B_h = (half*)malloc(ldb * N * sizeof(half));
     C_h = (half*)malloc(ldc * N * sizeof(half));
     D_h_cuda = (half*)malloc(ldc * N * sizeof(half));
-    D_h_cublas = (half*)malloc(ldc * N * sizeof(half));
+    D_h_cublas = (float*)malloc(ldc * N * sizeof(float));
 
-    init_matrix(A_h, lda, M, K, false);
-    init_matrix(B_h, ldb, K, N, true);
-    init_matrix(C_h, ldc, M, N, true);
-    memcpy(D_h_cuda, C_h, M * ldc * sizeof(half));
+    init_matrix(A_h, lda, K, M); // A(KxM)
+    init_matrix(B_h, ldb, K, N);  // B(KxN)
+    init_matrix(C_h, ldc, M, N);  // C(MxN)
+    memcpy(D_h_cuda, C_h, ldc * N * sizeof(half));
 
-#if 1
+#if 0
     printf("A_h =");
     print_matrix(A_h, lda, M, K, false);
     printf("B_h =");
@@ -122,8 +122,11 @@ int main()
 #endif
 
     gemm_v01_cuda(M, N, K, A_h, lda, B_h, ldb, C_h, ldc, alpha, beta, D_h_cuda);
+
+#if 0
     printf("D_h_cuda = cudaCoreGemm(A, B) =\n");
     print_matrix(D_h_cuda, ldc, M, N, true);
+#endif
 
     verify_blas(M, N, K, A_h, lda, B_h, ldb, C_h, ldc, alpha, beta, D_h_cublas);
     verify(M, N, D_h_cuda, ldc, D_h_cublas, ldc, 0.01);// relative error
