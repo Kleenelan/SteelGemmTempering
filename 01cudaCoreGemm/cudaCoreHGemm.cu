@@ -4,73 +4,9 @@
 #include <cuda_fp16.h>
 //#include <cuda_runtime.h>
 
+#include "cublas_lay_egg.h"
+#include "matrix_init_print.h"
 
-void init_matrix(half *A, int lda, int m, int n, bool colMajor)
-{
-    if(colMajor)
-    {
-        for(int j=0; j<n; j++)
-        {
-            for(int i=0; i<m; i++)
-            {
-                half x = half(rand()*1.0f/RAND_MAX);
-                A[i + j*lda] = x;
-                //printf(" %f",  float(x));
-            }
-        }
-        //printf("\n\n");
-    }
-    else
-    {
-        for(int i=0; i<m; i++)
-        {
-            for(int j=0; j<n; j++)
-            {
-                half x = half(rand()*1.0f/RAND_MAX);
-                A[i*lda + j] = x;
-                //printf(" %f",  float(x));
-            }
-        }
-    }
-}
-
-void print_matrix(half *A, int lda, int m, int n, bool colMajor)
-{
-    printf("[ ...\n");
-    for(int i=0; i<m; i++)
-    {
-
-        for(int j=0; j<n; j++)
-        {
-            if(colMajor)
-                printf(" %5.4f,", float(A[i + j*lda]));
-            else
-                printf(" %5.4f,", float(A[i*lda + j]));
-        }
-        printf(" ; ...\n");
-    }
-    printf("]\n");
-}
-
-void gemm_fp16_cpu(int M, int N, int K,
-                   half* A, int lda,
-                   half* B, int ldb,
-                   half* C, int ldc,
-                   half alpha, half beta)
-{
-    for(int i=0; i<M; i++)
-    {
-        for(int j=0; j<N; j++)
-        {
-            half sigma = half(0.0f);
-            for(int k=0; k<K; k++)
-            {
-                sigma += A[i*lda + k] * B[k + j*ldb];
-            }
-            C[i + j*ldc] = alpha*sigma + beta*C[i + j*ldc];
-        }
-    }
-}
 
 //A-rowMajor; B-colMajor; C-col Major;
 __global__ void gemm_v01_fp16_all(int M, int N, int K,
@@ -100,8 +36,6 @@ __global__ void gemm_v01_fp16_all(int M, int N, int K,
 
     C[i + j*ldc] = alpha*sigma + beta*C[i + j*ldc];
 }
-
-
 
 void gemm_v01_cuda(int m, int n, int k,
                    half* Ah, int lda,
@@ -141,7 +75,6 @@ printf("##11########\n");
     cudaFree(Cd);
 }
 
-
 int main()
 {
 #if 0
@@ -160,9 +93,8 @@ int main()
 	half *A_h;
     half *B_h;
     half *C_h;
-    half *D_h;
-    half *V_h;
-
+    half *D_h_cuda;
+    half *D_h_cublas;
 
     half alpha = half(1.0);
     half beta  = half(0.0);
@@ -170,13 +102,13 @@ int main()
     A_h = (half*)malloc(M * lda * sizeof(half));
     B_h = (half*)malloc(ldb * N * sizeof(half));
     C_h = (half*)malloc(ldc * N * sizeof(half));
-    D_h = (half*)malloc(ldc * N * sizeof(half));
-    V_h = (half*)malloc(ldc * N * sizeof(half));
+    D_h_cuda = (half*)malloc(ldc * N * sizeof(half));
+    D_h_cublas = (half*)malloc(ldc * N * sizeof(half));
 
     init_matrix(A_h, lda, M, K, false);
     init_matrix(B_h, ldb, K, N, true);
     init_matrix(C_h, ldc, M, N, true);
-    memcpy(D_h, C_h, M * ldc * sizeof(half));
+    memcpy(D_h_cuda, C_h, M * ldc * sizeof(half));
 
 #if 1
     printf("A_h =");
@@ -185,22 +117,19 @@ int main()
     print_matrix(B_h, ldb, K, N, true);
     printf("C_h =");
     print_matrix(C_h, ldc, M, N, true);
-    printf("D_h =");
-    print_matrix(D_h, ldc, M, N, true);
+    printf("D_h_cuda =");
+    print_matrix(D_h_cuda, ldc, M, N, true);
 #endif
 
-    gemm_fp16_cpu(M, N, K, A_h, lda, B_h, ldb, D_h, ldc, alpha, beta);// Arow Bcol Crow Major;
+    gemm_v01_cuda(M, N, K, A_h, lda, B_h, ldb, C_h, ldc, alpha, beta, D_h_cuda);
+    printf("D_h_cuda = cudaCoreGemm(A, B) =\n");
+    print_matrix(D_h_cuda, ldc, M, N, true);
 
-    printf("D_h = cpuGemm(A, B) =\n");
-    print_matrix(D_h, ldc, M, N, true);
-    memset(D_h, 0x00, ldc * N * sizeof(half));
+    verify_blas(M, N, K, A_h, lda, B_h, ldb, C_h, ldc, alpha, beta, D_h_cublas);
+    verify(M, N, D_h_cuda, ldc, D_h_cublas, ldc, 0.01);// relative error
 
-    gemm_v01_cuda(M, N, K, A_h, lda, B_h, ldb, C_h, ldc, alpha, beta, V_h);
-    printf("V_h = cudaCoreGemm(A, B) =\n");
-    print_matrix(V_h, ldc, M, N, true);
-
-
-    free(D_h);
+    free(D_h_cuda);
+    free(D_h_cublas);
     free(A_h);
     free(B_h);
     free(C_h);

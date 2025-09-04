@@ -48,7 +48,6 @@ void print_matrix(const half *A, const int lda, const int m, const int n, bool c
     printf("[ ...\n");
     for(int i=0; i<m; i++)
     {
-
         for(int j=0; j<n; j++)
         {
             if(colMajor)
